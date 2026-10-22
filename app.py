@@ -1,8 +1,6 @@
 import streamlit as st
 import whisper
-import yt_dlp
 import os
-import subprocess
 import time
 
 # --- Page Configuration ---
@@ -79,12 +77,6 @@ custom_css = """
         margin: 0 auto;
     }
 
-    /* Center Text Input */
-    [data-testid="stTextInput"] {
-        max-width: 600px;
-        margin: 0 auto;
-    }
-
     /* Center and Style Primary Action Buttons */
     .stButton>button {
         display: block;
@@ -105,25 +97,9 @@ custom_css = """
         background-color: #4338ca !important;
         box-shadow: 0 6px 18px rgba(67, 56, 202, 0.4) !important;
     }
-
-    /* Center Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        justify-content: center;
-    }
     </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-
-# --- Auto Deno Setup for YouTube ---
-@st.cache_resource
-def setup_deno():
-    try:
-        subprocess.run("curl -fsSL https://deno.land/install.sh | sh -s v1.40.0 > /dev/null 2>&1", shell=True)
-    except Exception:
-        pass
-    return True
-
-setup_deno()
 
 # --- Hero Header ---
 st.markdown("""
@@ -136,7 +112,7 @@ st.markdown("""
 # --- Recommendation Notice ---
 st.markdown("""
     <div class="tip-box">
-        💡 <b>Pro Tip:</b> Direct <b>Audio File Upload (.mp3, .wav)</b> is the fastest and 100% reliable method.
+        💡 <b>Pro Tip:</b> Direct <b>Audio/Video File Upload (.mp3, .wav, .mp4)</b> is 100% reliable, fast, and secure.
     </div>
 """, unsafe_allow_html=True)
 
@@ -148,19 +124,8 @@ def load_model():
 with st.spinner("Initializing AI Engine..."):
     model = load_model()
 
-# --- Method Selection Tabs ---
-tab1, tab2 = st.tabs(["📁 Method 1: Upload Audio File", "🔗 Method 2: Paste Video Link"])
-
-uploaded_file = None
-media_url = ""
-
-# --- TAB 1: Audio Upload ---
-with tab1:
-    uploaded_file = st.file_uploader("Select an audio file from your device (.mp3, .wav, .m4a)", type=["mp3", "wav", "m4a"])
-
-# --- TAB 2: URL Option ---
-with tab2:
-    media_url = st.text_input("Enter Video Link (YouTube, Shorts, etc.):", placeholder="https://www.youtube.com/watch?v=...")
+# --- File Upload Section ---
+uploaded_file = st.file_uploader("Select an audio or video file from your device (.mp3, .wav, .mp4, .m4a)", type=["mp3", "wav", "mp4", "m4a"])
 
 st.markdown("---")
 
@@ -168,55 +133,24 @@ st.markdown("---")
 generate_btn = st.button("🚀 Generate Captions Now", type="primary")
 
 if generate_btn:
-    audio_path = None
-    
-    if not uploaded_file and not (media_url and media_url.strip()):
-        st.warning("⚠️ Please upload an audio file OR enter a video link first!")
+    if not uploaded_file:
+        st.warning("⚠️ Please upload an audio or video file first before clicking the button!")
     else:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        if uploaded_file is not None:
-            status_text.info("📥 Processing uploaded audio file...")
-            progress_bar.progress(25)
-            
-            audio_path = uploaded_file.name
-            with open(audio_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            time.sleep(0.5)
-            progress_bar.progress(50)
-            
-        elif media_url and media_url.strip() != "":
-            status_text.info("⏳ Downloading audio from link... (Please wait)")
-            progress_bar.progress(15)
-            
-            os.environ["PATH"] += os.pathsep + os.path.expanduser("~/.deno/bin")
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': 'downloaded_audio.%(ext)s',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-                'socket_timeout': 30,
-                'geo_bypass': True,
-                'nocheckcertificate': True,
-            }
-            
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.extract_info(media_url, download=True)
-                    audio_path = "downloaded_audio.mp3"
-                progress_bar.progress(50)
-            except Exception as e:
-                status_text.empty()
-                progress_bar.empty()
-                st.error(f"❌ Download Error: {str(e)}")
+        status_text.info("📥 Processing uploaded file...")
+        progress_bar.progress(30)
+        
+        audio_path = uploaded_file.name
+        with open(audio_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        time.sleep(0.5)
+        progress_bar.progress(60)
 
         if audio_path and os.path.exists(audio_path):
             status_text.info("🤖 AI is listening & generating captions... Please wait.")
-            progress_bar.progress(70)
+            progress_bar.progress(80)
             
             try:
                 result = model.transcribe(audio_path)
@@ -224,20 +158,18 @@ if generate_btn:
                 status_text.empty()
                 
                 formatted_text = ""
-                srt_text = "WEBVTT - Generated by AI Caption Studio\n\n"
+                srt_text = ""
                 
                 if "segments" in result:
                     for idx, seg in enumerate(result["segments"], start=1):
                         start = seg["start"]
                         end = seg["end"]
                         
-                        # Format for display
                         start_int, end_int = int(start), int(end)
                         m_s, s_s = divmod(start_int, 60)
                         m_e, s_e = divmod(end_int, 60)
                         formatted_text += f"[{m_s:02d}:{s_s:02d} - {m_e:02d}:{s_e:02d}] {seg['text']}\n"
                         
-                        # Format for SRT/VTT download
                         def fmt_time(t):
                             hrs = int(t // 3600)
                             mins = int((t % 3600) // 60)
@@ -272,8 +204,8 @@ if generate_btn:
                         mime="text/plain"
                     )
 
-                if os.path.exists("downloaded_audio.mp3"):
-                    os.remove("downloaded_audio.mp3")
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
                     
             except Exception as e:
                 status_text.empty()
