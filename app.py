@@ -2,6 +2,7 @@ import streamlit as st
 import whisper
 import os
 import time
+from pytubefix import YouTube
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -66,17 +67,13 @@ custom_css = """
         text-align: left;
     }
     
-    /* Center File Uploader */
-    [data-testid="stFileUploader"] {
+    /* Center File Uploader & Input */
+    [data-testid="stFileUploader"], [data-testid="stTextInput"] {
         width: 100%;
         max-width: 600px;
         margin: 0 auto;
     }
-    [data-testid="stFileUploader"] section {
-        text-align: center;
-        margin: 0 auto;
-    }
-
+    
     /* Center and Style Primary Action Buttons */
     .stButton>button {
         display: block;
@@ -97,6 +94,11 @@ custom_css = """
         background-color: #4338ca !important;
         box-shadow: 0 6px 18px rgba(67, 56, 202, 0.4) !important;
     }
+
+    /* Center Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        justify-content: center;
+    }
     </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -112,7 +114,7 @@ st.markdown("""
 # --- Recommendation Notice ---
 st.markdown("""
     <div class="tip-box">
-        💡 <b>Pro Tip:</b> Direct <b>Audio/Video File Upload (.mp3, .wav, .mp4)</b> is 100% reliable, fast, and secure.
+        💡 <b>Pro Tip:</b> Aap direct <b>Audio/Video File Upload</b> bhi kar sakte hain ya phir <b>YouTube Link</b> paste karke captions generate kar sakte hain!
     </div>
 """, unsafe_allow_html=True)
 
@@ -124,30 +126,58 @@ def load_model():
 with st.spinner("Initializing AI Engine..."):
     model = load_model()
 
-# --- File Upload Section ---
-uploaded_file = st.file_uploader("Select an audio or video file from your device (.mp3, .wav, .mp4, .m4a)", type=["mp3", "wav", "mp4", "m4a"])
+# --- Tabs for Both Options ---
+tab1, tab2 = st.tabs(["📁 Method 1: Upload File", "🔗 Method 2: YouTube Link"])
+
+uploaded_file = None
+media_url = ""
+
+with tab1:
+    uploaded_file = st.file_uploader("Select an audio or video file (.mp3, .wav, .mp4, .m4a)", type=["mp3", "wav", "mp4", "m4a"])
+
+with tab2:
+    media_url = st.text_input("Enter YouTube Video Link:", placeholder="https://www.youtube.com/watch?v=...")
 
 st.markdown("---")
 
-# --- VISIBLE PROCESS BUTTON ---
+# --- PROCESS BUTTON ---
 generate_btn = st.button("🚀 Generate Captions Now", type="primary")
 
 if generate_btn:
-    if not uploaded_file:
-        st.warning("⚠️ Please upload an audio or video file first before clicking the button!")
+    audio_path = None
+    
+    if not uploaded_file and not (media_url and media_url.strip()):
+        st.warning("⚠️ Please upload a file OR enter a YouTube link first!")
     else:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        status_text.info("📥 Processing uploaded file...")
-        progress_bar.progress(30)
-        
-        audio_path = uploaded_file.name
-        with open(audio_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        time.sleep(0.5)
-        progress_bar.progress(60)
+        # Option 1: File Upload
+        if uploaded_file is not None:
+            status_text.info("📥 Processing uploaded file...")
+            progress_bar.progress(30)
+            
+            audio_path = uploaded_file.name
+            with open(audio_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            time.sleep(0.5)
+            progress_bar.progress(60)
+            
+        # Option 2: YouTube Link via pytubefix
+        elif media_url and media_url.strip() != "":
+            status_text.info("⏳ Downloading audio from YouTube link... Please wait.")
+            progress_bar.progress(25)
+            try:
+                yt = YouTube(media_url)
+                stream = yt.streams.get_audio_only()
+                audio_path = stream.download(filename="yt_audio.mp4")
+                progress_bar.progress(60)
+            except Exception as e:
+                status_text.empty()
+                progress_bar.empty()
+                st.error(f"❌ YouTube Download Error: {str(e)}")
 
+        # Transcription Process
         if audio_path and os.path.exists(audio_path):
             status_text.info("🤖 AI is listening & generating captions... Please wait.")
             progress_bar.progress(80)
@@ -186,7 +216,7 @@ if generate_btn:
                 st.subheader("Your Subtitles:")
                 st.text_area("Captions Output", value=formatted_text, height=300)
 
-                # Download Buttons for SRT Formats
+                # Download Buttons
                 st.subheader("📥 Download Subtitles File")
                 col1, col2 = st.columns(2)
                 with col1:
@@ -204,6 +234,7 @@ if generate_btn:
                         mime="text/plain"
                     )
 
+                # Cleanup temporary files
                 if os.path.exists(audio_path):
                     os.remove(audio_path)
                     
