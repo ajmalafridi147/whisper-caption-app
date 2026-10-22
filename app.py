@@ -3,7 +3,18 @@ import whisper
 import yt_dlp
 import os
 
+# Page Configuration
 st.set_page_config(page_title="AI Audio & Video Caption Generator", layout="centered")
+
+# Hide Streamlit Default Header, Footer, and Menu (Branding Remove karne ke liye)
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 st.title("🎙️ Free AI Audio & Video Caption Generator")
 st.write("Generate accurate subtitles with timestamps for audio files and video links.")
@@ -22,7 +33,9 @@ if st.button("Generate Captions", type="primary"):
     audio_path = None
     
     if media_url and media_url.strip() != "":
-        st.info("Downloading media link...")
+        st.info("Downloading media link (bypassing restrictions)...")
+        
+        # YouTube 403 Forbidden error bypass options
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': 'downloaded_audio.%(ext)s',
@@ -31,7 +44,17 @@ if st.button("Generate Captions", type="primary"):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
+            'socket_timeout': 30,
+            'geo_bypass': True,
+            'nocheckcertificate': True,
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            }
         }
+        
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.extract_info(media_url, download=True)
@@ -45,7 +68,7 @@ if st.button("Generate Captions", type="primary"):
             f.write(uploaded_file.getbuffer())
 
     if audio_path:
-        with st.spinner("Transcribing... Please wait..."):
+        with st.spinner("Transcribing with Whisper... Please wait..."):
             try:
                 result = model.transcribe(audio_path)
                 formatted_text = ""
@@ -69,3 +92,7 @@ if st.button("Generate Captions", type="primary"):
                 st.error(f"Transcription Error: {str(e)}")
     else:
         st.warning("Please upload a file or paste a video link first.")
+
+# Custom Clean Footer (Streamlit branding ki jagah apna footer)
+st.markdown("---")
+st.markdown("<p style='text-align: center; color: #64748b; font-size: 13px;'>Powered by OpenAI Whisper • Built for Content Creators</p>", unsafe_allow_html=True)
