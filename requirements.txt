@@ -1,5 +1,5 @@
 streamlit
 openai-whisper
-yt-dlp --upgrade
+yt-dlp
 torch
 torchaudio
