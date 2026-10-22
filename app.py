@@ -17,15 +17,13 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# Automatically install Deno runtime on startup if not present (YouTube JS challenge bypass)
+# Automatically install Deno runtime on startup if not present
 @st.cache_resource
 def setup_deno():
-    deno_path = "/tmp/deno"
-    if not os.path.exists(deno_path):
-        try:
-            subprocess.run("curl -fsSL https://deno.land/install.sh | sh -s v1.40.0 > /dev/null 2>&1", shell=True)
-        except Exception:
-            pass
+    try:
+        subprocess.run("curl -fsSL https://deno.land/install.sh | sh -s v1.40.0 > /dev/null 2>&1", shell=True)
+    except Exception:
+        pass
     return True
 
 setup_deno()
@@ -47,11 +45,11 @@ if st.button("Generate Captions", type="primary"):
     audio_path = None
     
     if media_url and media_url.strip() != "":
-        st.info("Downloading media link (bypassing restrictions)...")
+        st.info("Downloading media link (bypassing bot check)...")
         
-        # Updated yt-dlp options using iOS/Web client and Deno path
         os.environ["PATH"] += os.pathsep + os.path.expanduser("~/.deno/bin")
         
+        # Bot detection aur sign-in restriction bypass karne ke liye updated extractor args
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': 'downloaded_audio.%(ext)s',
@@ -62,7 +60,7 @@ if st.button("Generate Captions", type="primary"):
             }],
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['ios', 'web']
+                    'player_client': ['mweb', 'android']
                 }
             },
             'socket_timeout': 30,
