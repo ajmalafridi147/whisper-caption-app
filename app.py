@@ -6,7 +6,7 @@ import os
 # Page Configuration
 st.set_page_config(page_title="AI Audio & Video Caption Generator", layout="centered")
 
-# Hide Streamlit Default Header, Footer, and Menu (Branding Remove karne ke liye)
+# Hide Streamlit Default Header, Footer, and Menu
 hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -35,7 +35,7 @@ if st.button("Generate Captions", type="primary"):
     if media_url and media_url.strip() != "":
         st.info("Downloading media link (bypassing restrictions)...")
         
-        # YouTube 403 Forbidden error bypass options
+        # YouTube 403 & Client Bypass Options
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': 'downloaded_audio.%(ext)s',
@@ -44,15 +44,14 @@ if st.button("Generate Captions", type="primary"):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web']
+                }
+            },
             'socket_timeout': 30,
             'geo_bypass': True,
             'nocheckcertificate': True,
-            'headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-            }
         }
         
         try:
@@ -93,6 +92,6 @@ if st.button("Generate Captions", type="primary"):
     else:
         st.warning("Please upload a file or paste a video link first.")
 
-# Custom Clean Footer (Streamlit branding ki jagah apna footer)
+# Custom Clean Footer
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #64748b; font-size: 13px;'>Powered by OpenAI Whisper • Built for Content Creators</p>", unsafe_allow_html=True)
