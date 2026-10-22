@@ -2,8 +2,9 @@ import streamlit as st
 import whisper
 import yt_dlp
 import os
+import subprocess
 
-# Page Configuration
+# Streamlit Page Config
 st.set_page_config(page_title="AI Audio & Video Caption Generator", layout="centered")
 
 # Hide Streamlit Default Header, Footer, and Menu
@@ -15,6 +16,19 @@ hide_streamlit_style = """
     </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# Automatically install Deno runtime on startup if not present (YouTube JS challenge bypass)
+@st.cache_resource
+def setup_deno():
+    deno_path = "/tmp/deno"
+    if not os.path.exists(deno_path):
+        try:
+            subprocess.run("curl -fsSL https://deno.land/install.sh | sh -s v1.40.0 > /dev/null 2>&1", shell=True)
+        except Exception:
+            pass
+    return True
+
+setup_deno()
 
 st.title("🎙️ Free AI Audio & Video Caption Generator")
 st.write("Generate accurate subtitles with timestamps for audio files and video links.")
@@ -35,7 +49,9 @@ if st.button("Generate Captions", type="primary"):
     if media_url and media_url.strip() != "":
         st.info("Downloading media link (bypassing restrictions)...")
         
-        # YouTube 403 & Client Bypass Options
+        # Updated yt-dlp options using iOS/Web client and Deno path
+        os.environ["PATH"] += os.pathsep + os.path.expanduser("~/.deno/bin")
+        
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': 'downloaded_audio.%(ext)s',
@@ -46,7 +62,7 @@ if st.button("Generate Captions", type="primary"):
             }],
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'web']
+                    'player_client': ['ios', 'web']
                 }
             },
             'socket_timeout': 30,
