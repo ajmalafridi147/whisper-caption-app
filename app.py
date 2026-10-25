@@ -97,9 +97,9 @@ LANGUAGES = {
 }
 LANG_CODE_TO_NAME = {v: k for k, v in LANGUAGES.items()}
 
-@st.cache_resource(show_spinner="Loading Whisper model (first run may take a little while)...")
+@st.cache_resource(show_spinner="Loading Whisper model (tiny for stable memory usage)...")
 def load_whisper_model():
-    return whisper.load_model("base")
+    return whisper.load_model("tiny")
 
 def format_srt_time(seconds):
     seconds = max(0.0, float(seconds))
