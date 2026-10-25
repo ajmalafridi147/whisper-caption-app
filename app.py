@@ -18,6 +18,20 @@ st.set_page_config(
 # Preserve the original compact, centered design.
 st.markdown(
     """
+
+/* Tabs ko center mein karne ke liye */
+div[data-testid="stTabs"] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+div[data-testid="stTabs"] [data-baseweb="tab-list"] {
+    justify-content: center;
+    display: flex;
+}
+
+
+    
     <style>
     #MainMenu, footer, header {visibility: hidden;}
     [data-testid="stStatusWidget"] {visibility: hidden;}
