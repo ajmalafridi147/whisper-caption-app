@@ -51,8 +51,8 @@ st.markdown(
       <p>Generate accurate timestamps, original captions, and translated subtitles.</p>
     </div>
     <div class="tip">
-      💡 <b>Pro tip:</b> Behtareen results ke liye clear audio use karein.
-      YouTube link download na ho to media file upload kar lein.
+      💡 <b>Pro tip:</b> For best results, use clear audio, and if the YouTube link cannot be downloaded, 
+                please upload the media file instead.
     </div>
     """,
     unsafe_allow_html=True,
@@ -136,7 +136,6 @@ def safe_language_code(name):
     return LANGUAGES.get(name, "und")
 
 def get_openai_api_key():
-    # st.secrets can raise when no secrets file is configured locally.
     try:
         key = st.secrets.get("OPENAI_API_KEY", "")
     except Exception:
@@ -203,7 +202,6 @@ def translate_segments(segments, target_language, api_key):
             match = re.match(r"^\s*(\d+)[.)]\s*(.*?)\s*$", line)
             if match:
                 parsed[int(match.group(1))] = match.group(2).strip()
-        # If the model's formatting is imperfect, do not silently misalign segments.
         if len(parsed) != len(batch) or any(i not in parsed for i in range(1, len(batch) + 1)):
             raise ValueError(
                 "Translation response could not be aligned safely with subtitle segments. "
@@ -232,7 +230,6 @@ def download_youtube_audio(url, destination):
         info = downloader.extract_info(url, download=True)
         path = downloader.prepare_filename(info)
     if not os.path.exists(path):
-        # Some postprocessors can change the extension.
         candidates = list(Path(destination).glob("youtube_audio.*"))
         if not candidates:
             raise FileNotFoundError("Downloaded audio file was not found.")
