@@ -1,412 +1,585 @@
+
 import os
 import re
 import tempfile
-import shutil
 from pathlib import Path
 
 import streamlit as st
 import whisper
-import yt_dlp
-from openai import OpenAI
+import requests
+
+# Optional YouTube support
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
+
+
+# -------------------- PAGE CONFIG --------------------
 
 st.set_page_config(
     page_title="AI Audio & Video Caption Generator",
     page_icon="🎙️",
-    layout="centered",
+    layout="centered"
 )
 
-# Clean CSS with Centered Tabs and Responsive Design
-st.markdown(
-    """
-    <style>
-    #MainMenu, footer, header {visibility: hidden;}
-    [data-testid="stStatusWidget"] {visibility: hidden;}
-    .block-container {max-width: 850px; padding-top: 1.5rem; padding-bottom: 2rem;}
-    
-    /* Center align tabs */
-    div[data-testid="stTabs"] {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+st.markdown("""
+<style>
+    .block-container {
+        max-width: 850px;
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
     }
-    div[data-testid="stTabs"] [data-baseweb="tab-list"] {
-        justify-content: center;
-        display: flex;
-    }
-
     .hero {
-        background: linear-gradient(120deg, #6548d7 0%, #3277e8 100%);
-        color: white; padding: 25px 22px; border-radius: 16px;
-        text-align: center; margin-bottom: 18px;
+        padding: 25px 18px;
+        border-radius: 18px;
+        text-align: center;
+        color: white;
+        background: linear-gradient(120deg, #6548e8, #2878d7);
+        margin-bottom: 20px;
     }
-    .hero h1 {font-size: 1.8rem; margin: 0 0 8px 0; color: white;}
-    .hero p {font-size: 1rem; margin: 0; color: white;}
+    .hero h1 {
+        font-size: 30px;
+        margin-bottom: 8px;
+    }
+    .hero p {
+        font-size: 15px;
+        margin: 0;
+    }
     .tip {
-        background: #eef5ff; border-left: 5px solid #3779e8;
-        color: #20324d; padding: 12px 15px; border-radius: 8px;
-        margin: 12px 0 20px 0;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(120, 120, 150, 0.10);
+        margin: 12px 0;
     }
-    div.stButton > button, div.stDownloadButton > button {
-        border-radius: 9px; font-weight: 600; width: 100%;
-    }
-    .small-note {font-size: .88rem; color: #687386;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="hero">
+    <h1>🎙️ AI Audio & Video Caption Generator</h1>
+    <p>Generate captions from audio and video, then translate them.</p>
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown(
-    """
-    <div class="hero">
-      <h1>🎙️ AI Audio &amp; Video Caption Generator</h1>
-      <p>Generate accurate timestamps, original captions, and translated subtitles.</p>
-    </div>
-    <div class="tip">
-      💡 <b>Pro tip:</b> For best results, use clear audio, and if the YouTube link cannot be downloaded, 
-                please upload the media file instead.
-    </div>
-    """,
-    unsafe_allow_html=True,
+    '<div class="tip">💡 Upload an audio/video file, select the caption language, '
+    'and optionally translate the captions into another language.</div>',
+    unsafe_allow_html=True
 )
 
-SUPPORTED_TYPES = ["mp3", "wav", "mp4", "m4a", "mpeg", "mpga", "webm", "ogg", "oga", "flac"]
+
+# -------------------- SETTINGS --------------------
+
 LANGUAGES = {
     "English": "en",
     "Urdu": "ur",
     "Arabic": "ar",
-    "Hindi": "hi",
-    "Spanish": "es",
+    "Chinese (Simplified)": "zh",
     "French": "fr",
     "German": "de",
-    "Chinese (Simplified)": "zh",
-    "Portuguese": "pt",
-    "Turkish": "tr",
+    "Hindi": "hi",
     "Italian": "it",
     "Japanese": "ja",
     "Korean": "ko",
-    "Russian": "ru",
-    "Bengali": "bn",
-    "Punjabi": "pa",
     "Persian": "fa",
+    "Portuguese": "pt",
+    "Russian": "ru",
+    "Spanish": "es",
+    "Turkish": "tr",
+    "Bengali": "bn",
     "Indonesian": "id",
     "Dutch": "nl",
     "Polish": "pl",
     "Thai": "th",
-    "Vietnamese": "vi",
-    "Swahili": "sw",
+    "Vietnamese": "vi"
 }
-LANG_CODE_TO_NAME = {v: k for k, v in LANGUAGES.items()}
 
-@st.cache_resource(show_spinner="Loading Whisper model (tiny for stable memory usage)...")
+LIBRETRANSLATE_URL = os.getenv(
+    "LIBRETRANSLATE_URL",
+    "https://libretranslate.com"
+).rstrip("/")
+
+LIBRETRANSLATE_API_KEY = os.getenv("LIBRETRANSLATE_API_KEY", "")
+
+
+# -------------------- WHISPER MODEL --------------------
+
+@st.cache_resource
 def load_whisper_model():
-    return whisper.load_model("tiny")
+    return whisper.load_model("base")
 
-def format_srt_time(seconds):
-    seconds = max(0.0, float(seconds))
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    whole_seconds = int(seconds % 60)
-    milliseconds = int(round((seconds - int(seconds)) * 1000))
-    if milliseconds >= 1000:
-        whole_seconds += 1
-        milliseconds = 0
-    if whole_seconds >= 60:
-        minutes += 1
-        whole_seconds = 0
-    if minutes >= 60:
-        hours += 1
-        minutes = 0
-    return f"{hours:02}:{minutes:02}:{whole_seconds:02},{milliseconds:03}"
 
-def format_readable_time(seconds):
-    total = max(0, int(seconds))
-    return f"{total // 60:02}:{total % 60:02}"
+# -------------------- CAPTION HELPERS --------------------
 
-def make_srt(segments):
-    blocks = []
+def format_timestamp(seconds):
+    """Convert seconds to SRT timestamp: HH:MM:SS,mmm."""
+    milliseconds = max(0, round(float(seconds) * 1000))
+
+    hours = milliseconds // 3_600_000
+    milliseconds %= 3_600_000
+
+    minutes = milliseconds // 60_000
+    milliseconds %= 60_000
+
+    secs = milliseconds // 1000
+    milliseconds %= 1000
+
+    return (
+        f"{hours:02}:{minutes:02}:{secs:02},"
+        f"{milliseconds:03}"
+    )
+
+
+def create_srt(segments):
+    output = []
+
     for index, segment in enumerate(segments, start=1):
-        text = str(segment.get("text", "")).strip()
-        if not text:
-            continue
-        blocks.append(
-            f"{index}\n"
-            f"{format_srt_time(segment['start'])} --> {format_srt_time(segment['end'])}\n"
-            f"{text}"
-        )
-    return "\n\n".join(blocks) + ("\n" if blocks else "")
+        start = format_timestamp(segment["start"])
+        end = format_timestamp(segment["end"])
+        text = str(segment["text"]).strip()
 
-def make_txt(segments):
+        output.append(
+            f"{index}\n{start} --> {end}\n{text}\n"
+        )
+
+    return "\n".join(output)
+
+
+def create_txt(segments):
     lines = []
+
     for segment in segments:
-        text = str(segment.get("text", "")).strip()
-        if text:
-            lines.append(f"[{format_readable_time(segment['start'])} - {format_readable_time(segment['end'])}] {text}")
+        start = float(segment["start"])
+        end = float(segment["end"])
+        text = str(segment["text"]).strip()
+
+        start_label = (
+            f"{int(start // 60):02}:{int(start % 60):02}"
+        )
+        end_label = (
+            f"{int(end // 60):02}:{int(end % 60):02}"
+        )
+
+        lines.append(f"[{start_label} - {end_label}] {text}")
+
     return "\n".join(lines)
 
-def safe_language_code(name):
-    return LANGUAGES.get(name, "und")
 
-def get_openai_api_key():
-    try:
-        key = st.secrets.get("OPENAI_API_KEY", "")
-    except Exception:
-        key = ""
-    return key or os.getenv("OPENAI_API_KEY", "")
-
-def transcribe_media(media_path, source_language):
+def transcribe_audio(file_path, source_language):
     model = load_whisper_model()
-    kwargs = {"fp16": False, "verbose": False}
-    if source_language != "Auto Detect":
-        code = safe_language_code(source_language)
-        if code != "und":
-            kwargs["language"] = code
-    result = model.transcribe(media_path, **kwargs)
-    segments = []
-    for item in result.get("segments", []):
-        text = str(item.get("text", "")).strip()
-        if text:
-            segments.append({
-                "start": float(item.get("start", 0.0)),
-                "end": float(item.get("end", 0.0)),
-                "text": text,
-            })
-    detected_code = result.get("language", "und")
-    detected_name = LANG_CODE_TO_NAME.get(detected_code, detected_code.upper() if detected_code != "und" else "Unknown")
-    return segments, detected_code, detected_name
 
-def translate_segments(segments, target_language, api_key):
-    """Translate batches of segment text while preserving original segment timing."""
-    if not api_key:
-        raise ValueError(
-            "Translation API key is missing. Add OPENAI_API_KEY to Streamlit Cloud Secrets."
+    options = {"fp16": False}
+
+    if source_language != "Auto Detect":
+        options["language"] = LANGUAGES[source_language]
+
+    result = model.transcribe(file_path, **options)
+
+    segments = []
+
+    for item in result.get("segments", []):
+        segments.append({
+            "start": float(item.get("start", 0)),
+            "end": float(item.get("end", 0)),
+            "text": str(item.get("text", "")).strip()
+        })
+
+    detected_code = result.get("language", "")
+    detected_name = next(
+        (
+            name for name, code in LANGUAGES.items()
+            if code == detected_code
+        ),
+        detected_code or "Unknown"
+    )
+
+    return segments, detected_name
+
+
+# -------------------- LIBRETRANSLATE --------------------
+
+def translate_text(text, source_code, target_code):
+    """Translate text using a LibreTranslate-compatible API."""
+
+    endpoint = f"{LIBRETRANSLATE_URL}/translate"
+
+    payload = {
+        "q": text,
+        "source": source_code,
+        "target": target_code,
+        "format": "text"
+    }
+
+    if LIBRETRANSLATE_API_KEY:
+        payload["api_key"] = LIBRETRANSLATE_API_KEY
+
+    response = requests.post(
+        endpoint,
+        data=payload,
+        timeout=60
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"Translation service returned HTTP {response.status_code}. "
+            "The service may be unavailable, rate-limited, or require an API key."
         )
-    if not segments:
-        return []
-    client = OpenAI(api_key=api_key)
-    translated = []
-    batch_size = 35
-    for start_index in range(0, len(segments), batch_size):
-        batch = segments[start_index:start_index + batch_size]
-        numbered_text = "\n".join(
-            f"{i + 1}. {segment['text']}" for i, segment in enumerate(batch)
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Translation service returned an invalid response."
+        ) from exc
+
+    translated = data.get("translatedText")
+
+    if not isinstance(translated, str):
+        raise RuntimeError(
+            "Translation service response did not contain translatedText."
         )
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"Translate each numbered subtitle segment into {target_language}. "
-                        "Return exactly the same number of numbered lines, in the same order. "
-                        "Keep each translation concise for subtitles. Do not merge, split, "
-                        "renumber, explain, or add lines. Preserve names and meaning. "
-                        "Output only numbered translations."
-                    ),
-                },
-                {"role": "user", "content": numbered_text},
-            ],
-        )
-        response_text = response.choices[0].message.content or ""
-        parsed = {}
-        for line in response_text.splitlines():
-            match = re.match(r"^\s*(\d+)[.)]\s*(.*?)\s*$", line)
-            if match:
-                parsed[int(match.group(1))] = match.group(2).strip()
-        if len(parsed) != len(batch) or any(i not in parsed for i in range(1, len(batch) + 1)):
-            raise ValueError(
-                "Translation response could not be aligned safely with subtitle segments. "
-                "Please try again."
-            )
-        for i, segment in enumerate(batch, start=1):
-            translated.append({
-                "start": segment["start"],
-                "end": segment["end"],
-                "text": parsed[i],
-            })
+
     return translated
 
-def download_youtube_audio(url, destination):
-    output_template = str(Path(destination) / "youtube_audio.%(ext)s")
-    options = {
-        "format": "bestaudio/best",
-        "outtmpl": output_template,
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-        "retries": 2,
-        "socket_timeout": 20,
-    }
-    with yt_dlp.YoutubeDL(options) as downloader:
-        info = downloader.extract_info(url, download=True)
-        path = downloader.prepare_filename(info)
-    if not os.path.exists(path):
-        candidates = list(Path(destination).glob("youtube_audio.*"))
-        if not candidates:
-            raise FileNotFoundError("Downloaded audio file was not found.")
-        path = str(candidates[0])
-    return path
 
-def display_results(segments, label, filename_prefix):
+def translate_segments(segments, source_code, target_code):
+    """Translate each subtitle segment while preserving timestamps."""
+
+    translated_segments = []
+
+    total = len(segments)
+    progress = st.progress(0)
+    status = st.empty()
+
+    for index, segment in enumerate(segments):
+        original_text = segment["text"].strip()
+
+        if not original_text:
+            translated_text = ""
+        else:
+            translated_text = translate_text(
+                original_text,
+                source_code,
+                target_code
+            )
+
+        translated_segments.append({
+            "start": segment["start"],
+            "end": segment["end"],
+            "text": translated_text.strip()
+        })
+
+        progress.progress((index + 1) / max(total, 1))
+        status.caption(
+            f"Translating caption {index + 1} of {total}..."
+        )
+
+    status.empty()
+    progress.empty()
+
+    return translated_segments
+
+
+# -------------------- PROCESSING UI --------------------
+
+def show_caption_results(segments, detected_language, source_code):
     if not segments:
-        st.warning("No speech segments were found.")
+        st.error("No speech was detected in this file.")
         return
-    st.subheader(label)
-    st.text_area(
-        f"{label} preview",
-        make_txt(segments),
-        height=240,
-        key=f"preview_{filename_prefix}",
-    )
+
+    st.success(f"Transcription complete. Detected language: {detected_language}")
+
+    original_srt = create_srt(segments)
+    original_txt = create_txt(segments)
+
+    st.subheader("Original Captions")
+
+    with st.expander("Preview original captions", expanded=True):
+        st.text(original_txt[:12000])
+
     col1, col2 = st.columns(2)
+
     with col1:
         st.download_button(
-            "⬇️ Download SRT",
-            data=make_srt(segments).encode("utf-8"),
-            file_name=f"{filename_prefix}.srt",
+            "⬇️ Download Original SRT",
+            data=original_srt,
+            file_name="captions_original.srt",
             mime="application/x-subrip",
-            key=f"srt_{filename_prefix}",
+            key="download_original_srt"
         )
+
     with col2:
         st.download_button(
-            "⬇️ Download TXT",
-            data=make_txt(segments).encode("utf-8"),
-            file_name=f"{filename_prefix}.txt",
-            mime="text/plain; charset=utf-8",
-            key=f"txt_{filename_prefix}",
+            "⬇️ Download Original TXT",
+            data=original_txt,
+            file_name="captions_original.txt",
+            mime="text/plain",
+            key="download_original_txt"
         )
 
-if "original_segments" not in st.session_state:
-    st.session_state.original_segments = None
-if "translated_segments" not in st.session_state:
-    st.session_state.translated_segments = None
-if "detected_language_name" not in st.session_state:
-    st.session_state.detected_language_name = None
-if "detected_language_code" not in st.session_state:
-    st.session_state.detected_language_code = None
-if "translation_target" not in st.session_state:
-    st.session_state.translation_target = None
+    st.divider()
+    st.subheader("Translate Captions")
 
-upload_tab, youtube_tab = st.tabs(["📁 Method 1: Upload File", "🔗 Method 2: YouTube Link"])
+    target_language = st.selectbox(
+        "Select target language",
+        options=list(LANGUAGES.keys()),
+        index=0,
+        key="target_language"
+    )
+
+    target_code = LANGUAGES[target_language]
+
+    if st.button("🌐 Translate Captions", type="primary"):
+        if source_code == target_code:
+            st.warning(
+                "The selected target language matches the transcription "
+                "language. Choose a different target language."
+            )
+            return
+
+        try:
+            with st.spinner("Translating captions..."):
+                translated = translate_segments(
+                    segments,
+                    source_code,
+                    target_code
+                )
+
+            st.session_state["translated_segments"] = translated
+            st.session_state["translated_language"] = target_language
+
+        except requests.exceptions.Timeout:
+            st.error(
+                "Translation timed out. Please try again or use another "
+                "LibreTranslate server."
+            )
+        except requests.exceptions.RequestException as exc:
+            st.error(
+                f"Could not connect to the translation service: {exc}"
+            )
+        except Exception as exc:
+            st.error(f"Translation failed: {exc}")
+
+    translated = st.session_state.get("translated_segments")
+    saved_language = st.session_state.get("translated_language")
+
+    if translated and saved_language:
+        st.subheader(f"Translated Captions — {saved_language}")
+
+        translated_srt = create_srt(translated)
+        translated_txt = create_txt(translated)
+
+        with st.expander("Preview translated captions", expanded=True):
+            st.text(translated_txt[:12000])
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.download_button(
+                "⬇️ Download Translated SRT",
+                data=translated_srt,
+                file_name=f"captions_{LANGUAGES[saved_language]}.srt",
+                mime="application/x-subrip",
+                key="download_translated_srt"
+            )
+
+        with col2:
+            st.download_button(
+                "⬇️ Download Translated TXT",
+                data=translated_txt,
+                file_name=f"captions_{LANGUAGES[saved_language]}.txt",
+                mime="text/plain",
+                key="download_translated_txt"
+            )
+
+
+# -------------------- TABS --------------------
+
+upload_tab, youtube_tab = st.tabs([
+    "📁 Upload Audio / Video",
+    "▶️ YouTube Link"
+])
+
+
+# -------------------- UPLOAD TAB --------------------
 
 with upload_tab:
     uploaded_file = st.file_uploader(
-        "Upload an audio or video file",
-        type=SUPPORTED_TYPES,
-        help="Supported formats include MP3, WAV, MP4, M4A, WEBM, OGG, and FLAC.",
+        "Choose an audio or video file",
+        type=[
+            "mp3", "wav", "mp4", "m4a", "mpeg",
+            "mpga", "webm", "ogg", "oga", "flac"
+        ]
     )
+
     source_language = st.selectbox(
-        "Spoken language",
-        ["Auto Detect"] + list(LANGUAGES.keys()),
+        "Transcription language",
+        options=["Auto Detect"] + list(LANGUAGES.keys()),
         index=0,
-        help="Choose Auto Detect to let Whisper identify the spoken language.",
-        key="upload_source_language",
-    )
-    if st.button("🚀 Generate Captions Now", type="primary", use_container_width=True, key="upload_transcribe"):
-        if not uploaded_file:
-            st.warning("Please upload an audio or video file first.")
-        else:
-            st.session_state.original_segments = None
-            st.session_state.translated_segments = None
-            with tempfile.TemporaryDirectory(prefix="caption_upload_") as work_dir:
-                suffix = Path(uploaded_file.name).suffix or ".media"
-                media_path = str(Path(work_dir) / f"uploaded_media{suffix}")
-                with open(media_path, "wb") as file_handle:
-                    file_handle.write(uploaded_file.getbuffer())
-                try:
-                    with st.spinner("Transcribing audio with Whisper..."):
-                        segments, lang_code, lang_name = transcribe_media(media_path, source_language)
-                    st.session_state.original_segments = segments
-                    st.session_state.detected_language_code = lang_code
-                    st.session_state.detected_language_name = lang_name
-                    st.success(f"Transcription complete. Detected language: {lang_name}")
-                except Exception as exc:
-                    st.error(f"Transcription failed: {exc}")
-
-with youtube_tab:
-    st.info("If YouTube downloading returns HTTP 403, upload the media file using the first tab.")
-    youtube_url = st.text_input("YouTube video URL", placeholder="https://www.youtube.com/watch?v=...")
-    yt_source_language = st.selectbox(
-        "Spoken language",
-        ["Auto Detect"] + list(LANGUAGES.keys()),
-        index=0,
-        key="youtube_source_language",
-    )
-    if st.button("🚀 Generate Captions Now", type="primary", use_container_width=True, key="youtube_transcribe"):
-        if not youtube_url.strip():
-            st.warning("Please enter a YouTube URL.")
-        elif not re.match(r"^https?://(www\.)?(youtube\.com|youtu\.be)/", youtube_url.strip(), re.I):
-            st.warning("Please enter a valid YouTube or youtu.be URL.")
-        else:
-            st.session_state.original_segments = None
-            st.session_state.translated_segments = None
-            with tempfile.TemporaryDirectory(prefix="caption_youtube_") as work_dir:
-                try:
-                    with st.spinner("Attempting to download audio from YouTube..."):
-                        media_path = download_youtube_audio(youtube_url.strip(), work_dir)
-                    with st.spinner("Transcribing audio with Whisper..."):
-                        segments, lang_code, lang_name = transcribe_media(media_path, yt_source_language)
-                    st.session_state.original_segments = segments
-                    st.session_state.detected_language_code = lang_code
-                    st.session_state.detected_language_name = lang_name
-                    st.success(f"Transcription complete. Detected language: {lang_name}")
-                except Exception as exc:
-                    message = str(exc)
-                    if "403" in message or "Forbidden" in message:
-                        st.error(
-                            "YouTube refused the media request (HTTP 403). This may be a hosting "
-                            "or YouTube request restriction; it is not necessarily a problem with "
-                            "your video. Please upload the media file using the first tab."
-                        )
-                    else:
-                        st.error(f"YouTube processing failed: {message}")
-
-if st.session_state.original_segments is not None:
-    st.divider()
-    detected_name = st.session_state.detected_language_name or "Unknown"
-    st.caption(f"Detected source language: **{detected_name}**")
-    display_results(
-        st.session_state.original_segments,
-        f"Original Captions ({detected_name})",
-        f"captions_original_{st.session_state.detected_language_code or 'und'}",
+        key="source_language_upload"
     )
 
-    st.divider()
-    st.subheader("🌐 Translate Captions")
-    st.write("Keep the original captions, or translate them into another language.")
-    target_options = list(LANGUAGES.keys())
-    default_target_index = target_options.index("English") if "English" in target_options else 0
-    target_language = st.selectbox(
-        "Translate into",
-        target_options,
-        index=default_target_index,
-        key="target_language",
-    )
-    if st.button("🌍 Translate Captions", type="primary", use_container_width=True):
-        if target_language == detected_name:
-            st.info("The selected target language matches the detected language. Choose another language if you need a translation.")
-        else:
-            api_key = get_openai_api_key()
+    if uploaded_file is not None:
+        if st.button("🎙️ Generate Captions", type="primary"):
+            temp_path = None
+
             try:
-                with st.spinner(f"Translating captions into {target_language}..."):
-                    result = translate_segments(st.session_state.original_segments, target_language, api_key)
-                st.session_state.translated_segments = result
-                st.session_state.translation_target = target_language
-                st.success(f"Translation complete: {target_language}")
-            except Exception as exc:
-                st.error(f"Translation failed: {exc}")
+                suffix = Path(uploaded_file.name).suffix or ".mp4"
 
-    if st.session_state.translated_segments is not None:
-        target = st.session_state.translation_target or target_language
-        target_code = safe_language_code(target)
-        display_results(
-            st.session_state.translated_segments,
-            f"Translated Captions ({target})",
-            f"captions_{target_code}",
+                with tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=suffix
+                ) as temp_file:
+                    temp_file.write(uploaded_file.getbuffer())
+                    temp_path = temp_file.name
+
+                with st.spinner(
+                    "Transcribing audio/video. This may take some time..."
+                ):
+                    segments, detected_language = transcribe_audio(
+                        temp_path,
+                        source_language
+                    )
+
+                st.session_state["original_segments"] = segments
+                st.session_state["detected_language"] = detected_language
+
+                st.session_state.pop("translated_segments", None)
+                st.session_state.pop("translated_language", None)
+
+            except Exception as exc:
+                st.error(f"Transcription failed: {exc}")
+
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+
+    if st.session_state.get("original_segments"):
+        detected_language = st.session_state.get(
+            "detected_language", "Unknown"
         )
 
-st.markdown(
-    "<p style='text-align:center;color:#7b8494;font-size:.85rem;margin-top:28px;'>"
-    "Powered by OpenAI Whisper • Built for Content Creators</p>",
-    unsafe_allow_html=True,
+        detected_code = next(
+            (
+                code for name, code in LANGUAGES.items()
+                if name == detected_language
+            ),
+            None
+        )
+
+        if detected_code is None:
+            detected_code = "en"
+
+        show_caption_results(
+            st.session_state["original_segments"],
+            detected_language,
+            detected_code
+        )
+
+
+# -------------------- YOUTUBE TAB --------------------
+
+with youtube_tab:
+    st.info(
+        "YouTube downloading may fail because of platform restrictions. "
+        "If it fails, download the media through a method permitted by "
+        "the content owner and upload the file in the first tab."
+    )
+
+    youtube_url = st.text_input(
+        "YouTube video URL",
+        placeholder="https://www.youtube.com/watch?v=..."
+    )
+
+    youtube_source_language = st.selectbox(
+        "Transcription language for YouTube",
+        options=["Auto Detect"] + list(LANGUAGES.keys()),
+        index=0,
+        key="source_language_youtube"
+    )
+
+    if st.button("▶️ Process YouTube Link"):
+        if not youtube_url.strip():
+            st.warning("Please enter a YouTube URL.")
+        elif not YT_DLP_AVAILABLE:
+            st.error(
+                "YouTube support is not installed. Add yt-dlp to "
+                "requirements.txt and redeploy the app."
+            )
+        elif not re.match(
+            r"^https?://(www\.)?(youtube\.com|youtu\.be)/",
+            youtube_url.strip()
+        ):
+            st.error("Please enter a valid YouTube URL.")
+        else:
+            temp_dir = tempfile.mkdtemp(prefix="caption_")
+            downloaded_path = None
+
+            try:
+                output_template = os.path.join(
+                    temp_dir, "media.%(ext)s"
+                )
+
+                options = {
+                    "format": "bestaudio/best",
+                    "outtmpl": output_template,
+                    "noplaylist": True,
+                    "quiet": True,
+                    "no_warnings": True
+                }
+
+                with st.spinner("Attempting to retrieve media..."):
+                    with yt_dlp.YoutubeDL(options) as ydl:
+                        ydl.download([youtube_url.strip()])
+
+                candidates = [
+                    os.path.join(temp_dir, filename)
+                    for filename in os.listdir(temp_dir)
+                    if os.path.isfile(os.path.join(temp_dir, filename))
+                ]
+
+                if not candidates:
+                    raise RuntimeError(
+                        "The media could not be downloaded."
+                    )
+
+                downloaded_path = candidates[0]
+
+                with st.spinner("Transcribing downloaded media..."):
+                    segments, detected_language = transcribe_audio(
+                        downloaded_path,
+                        youtube_source_language
+                    )
+
+                st.session_state["original_segments"] = segments
+                st.session_state["detected_language"] = detected_language
+                st.session_state.pop("translated_segments", None)
+                st.session_state.pop("translated_language", None)
+
+                st.rerun()
+
+            except Exception as exc:
+                st.error(
+                    "Could not process this YouTube video. YouTube may "
+                    "be blocking the request (HTTP 403). Try uploading "
+                    "the audio/video file instead. Details: "
+                    f"{exc}"
+                )
+
+            finally:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# -------------------- FOOTER --------------------
+
+st.divider()
+st.caption(
+    "Transcription powered by OpenAI Whisper. "
+    "Translation powered by a LibreTranslate-compatible service."
 )
