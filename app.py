@@ -407,5 +407,9 @@ if st.session_state.original_segments is not None:
             f"Translated Captions ({target})",
             f"captions_{target_code}",
         )
-
+st.markdown(
+    "<p style='text-align:center;color:#7b8494;font-size:.85rem;margin-top:28px;'>"
+    "    </p>",
+    unsafe_allow_html=True,
+)
 
