@@ -396,6 +396,6 @@ if st.session_state.original_segments is not None:
 
 st.markdown(
     "<p style='text-align:center;color:#7b8494;font-size:.85rem;margin-top:28px;'>"
-    "Powered by OpenAI Whisper • Built for Content Creators</p>",
+    "    </p>",
     unsafe_allow_html=True,
 )
