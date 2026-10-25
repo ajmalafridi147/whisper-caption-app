@@ -1,415 +1,412 @@
-import os
-import re
-import tempfile
-import shutil
-from pathlib import Path
-
-import streamlit as st
-import whisper
-import yt_dlp
-from openai import OpenAI
-
-st.set_page_config(
-    page_title="AI Audio & Video Caption Generator",
-    page_icon="🎙️",
-    layout="centered",
-)
-
-# Preserve the original compact, centered design.
-st.markdown(
-    """
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html>
+<html b:css='false' xmlns='http://www.w3.org/1999/xhtml' xmlns:b='http://www.google.com/2005/gml/b' xmlns:data='http://www.google.com/2005/gml/data' xmlns:expr='http://www.google.com/2005/gml/expr'>
+<head>
+    <title><data:blog.pageTitle/></title>
+    <meta content='width=device-width, initial-scale=1.0, maximum-scale=5.0' name='viewport'/>
+    <meta content='text/html; charset=UTF-8' http-equiv='Content-Type'/>
     
-    <style>
+    <!-- SEO Meta Tags -->
+    <meta content='VidCaptions - Free AI Audio &amp; Video Caption Generator' name='title'/>
+    <meta content='Convert audio, video files, and YouTube links into highly accurate captions and transcripts instantly using OpenAI Whisper AI. 100% Free SaaS tool.' name='description'/>
+    <meta content='AI caption generator, free video subtitles, OpenAI Whisper transcriber, YouTube subtitles generator, Urdu captions, Pashto transcription, audio to text' name='keywords'/>
+    <meta content='index, follow' name='robots'/>
+    
+    <!-- OpenGraph Social Tags -->
+    <meta expr:content='data:blog.pageTitle' property='og:title'/>
+    <meta content='Convert media files and YouTube videos into precise subtitles using OpenAI Whisper AI.' property='og:description'/>
+    <meta content='website' property='og:type'/>
+    <meta expr:content='data:blog.canonicalUrl' property='og:url'/>
 
-/* Tabs ko center mein karne ke liye */
-div[data-testid="stTabs"] {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-div[data-testid="stTabs"] [data-baseweb="tab-list"] {
-    justify-content: center;
-    display: flex;
-}
+    <b:skin><![CDATA[
+        /* Reset & Base Setup */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+            line-height: 1.6;
+            -webkit-text-size-adjust: 100%;
+        }
 
-  
-    #MainMenu, footer, header {visibility: hidden;}
-    [data-testid="stStatusWidget"] {visibility: hidden;}
-    .block-container {max-width: 850px; padding-top: 1.5rem; padding-bottom: 2rem;}
-    .hero {
-        background: linear-gradient(120deg, #6548d7 0%, #3277e8 100%);
-        color: white; padding: 25px 22px; border-radius: 16px;
-        text-align: center; margin-bottom: 18px;
-    }
-    .hero h1 {font-size: 1.8rem; margin: 0 0 8px 0; color: white;}
-    .hero p {font-size: 1rem; margin: 0; color: white;}
-    .tip {
-        background: #eef5ff; border-left: 5px solid #3779e8;
-        color: #20324d; padding: 12px 15px; border-radius: 8px;
-        margin: 12px 0 20px 0;
-    }
-    div.stButton > button, div.stDownloadButton > button {
-        border-radius: 9px; font-weight: 600; width: 100%;
-    }
-    div[data-testid="stTabs"] button {justify-content: center;}
-    .small-note {font-size: .88rem; color: #687386;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+        /* Blogger Outer Wrappers Reset */
+        .post-outer, .post, .blog-posts, .main-inner, .column-center-inner {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
 
-st.markdown(
-    """
-    <div class="hero">
-      <h1>🎙️ AI Audio &amp; Video Caption Generator</h1>
-      <p>Generate accurate timestamps, original captions, and translated subtitles.</p>
+        /* ------------------------------------
+           1. HIDE BLOG POST TITLE (If required)
+           ------------------------------------ */
+        .hide-blog-title .post-title,
+        .hide-blog-title h2.post-title,
+        .hide-blog-title h3.post-title {
+            display: none !important;
+        }
+
+        /* Header Navigation */
+        header {
+            background-color: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .header-brand a {
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .brand-logo-badge {
+            background: #4f46e5;
+            color: white;
+            font-weight: 800;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .brand-name-text {
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+
+        /* Nav & Hamburger Setup */
+        nav.nav-menu {
+            display: flex;
+            gap: 18px;
+            align-items: center;
+        }
+        nav.nav-menu a {
+            color: #475569;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: color 0.2s ease;
+        }
+        nav.nav-menu a:hover {
+            color: #4f46e5;
+        }
+
+        /* 3-Line Hamburger Icon Button */
+        .mobile-toggle-btn {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #0f172a;
+            padding: 4px 8px;
+            border-radius: 6px;
+            line-height: 1;
+        }
+
+        /* Layout Container */
+        .page-wrapper {
+            max-width: 1200px;
+            margin: 25px auto;
+            padding: 0 16px;
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 25px;
+        }
+
+        /* Hero Section */
+        .hero-section {
+            text-align: center;
+            padding: 35px 20px;
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            margin-bottom: 25px;
+        }
+        .hero-section h1 {
+            font-size: 28px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 12px;
+            line-height: 1.3;
+        }
+        .hero-section p {
+            font-size: 15px;
+            color: #475569;
+            max-width: 680px;
+            margin: 0 auto 20px auto;
+        }
+        .cta-button {
+            display: inline-block;
+            background: #4f46e5;
+            color: white !important;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 12px 28px;
+            border-radius: 8px;
+            text-decoration: none !important;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+            transition: all 0.2s ease;
+        }
+        .cta-button:hover {
+            background: #4338ca;
+            transform: translateY(-2px);
+        }
+
+        /* Features Grid */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 18px;
+            margin-bottom: 25px;
+        }
+        .feature-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .feature-card h3 {
+            margin-top: 0;
+            font-size: 17px;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        .feature-card p, .feature-card ul {
+            font-size: 14px;
+            color: #475569;
+        }
+        .feature-card ul {
+            padding-left: 18px;
+            margin-top: 8px;
+        }
+
+        /* SEO Block */
+        .seo-content-block {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 25px;
+        }
+        .seo-content-block h2 {
+            font-size: 20px;
+            color: #0f172a;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        /* Blog Post Display Card */
+        .blog-post-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        }
+
+        /* Sidebar Styling */
+        aside {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .widget {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .widget h2 {
+            font-size: 15px;
+            color: #0f172a;
+            border-bottom: 2px solid #4f46e5;
+            padding-bottom: 6px;
+            margin-top: 0;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+        .widget ul { list-style: none; padding: 0; }
+        .widget li { margin-bottom: 8px; }
+        .widget a { color: #475569; text-decoration: none; font-size: 14px; }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 25px;
+            border-top: 1px solid #e2e8f0;
+            color: #64748b;
+            font-size: 13px;
+            margin-top: 50px;
+            background: #ffffff;
+        }
+
+        /* ------------------------------------
+           2. MOBILE RESPONSIVE HAMBURGER MENU
+           ------------------------------------ */
+        @media (max-width: 900px) {
+            .page-wrapper {
+                grid-template-columns: 1fr;
+                margin: 15px auto;
+            }
+            .mobile-toggle-btn {
+                display: block; /* Show 3-line icon on mobile */
+            }
+            nav.nav-menu {
+                display: none; /* Hide menu links by default on mobile */
+                flex-direction: column;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                width: 100%;
+                background: #ffffff;
+                border-bottom: 1px solid #e2e8f0;
+                padding: 15px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                gap: 12px;
+            }
+            nav.nav-menu.active {
+                display: flex; /* Toggle menu when clicked */
+            }
+        }
+    ]]></b:skin>
+</head>
+<body>
+
+    <!-- Header Navigation Section -->
+    <header>
+        <div class='header-brand'>
+            <b:section id='header-logo-section' maxwidgets='1' showaddelement='no'>
+                <b:widget id='Header1' locked='true' title='VidCaptions Header' type='Header'>
+                    <b:includable id='main'>
+                        <a expr:href='data:blog.homepageUrl'>
+                            <b:if cond='data:useImage'>
+                                <img expr:alt='data:title' expr:src='data:sourceUrl' style='max-height: 40px;'/>
+                            <b:else/>
+                                <span class='brand-logo-badge'>AI</span>
+                                <span class='brand-name-text'><data:title/></span>
+                            </b:if>
+                        </a>
+                    </b:includable>
+                    <b:includable id='description'/>
+                    <b:includable id='title'/>
+                </b:widget>
+            </b:section>
+        </div>
+
+        <!-- 3-Line Hamburger Icon Button -->
+        <button class='mobile-toggle-btn' id='menuToggle' onclick='toggleMobileMenu()'>☰</button>
+
+        <!-- Header Menu Gadget -->
+        <b:section class='header-menu' id='header-menu-section' maxwidgets='1' showaddelement='yes'>
+            <b:widget id='LinkList1' locked='false' title='Navigation Menu' type='LinkList'>
+                <b:widget-settings>
+                    <b:widget-setting name='text-0'>Home</b:widget-setting>
+                    <b:widget-setting name='link-0'>https://vidcaptions.blogspot.com/</b:widget-setting>
+                    <b:widget-setting name='text-1'>Caption Generator</b:widget-setting>
+                    <b:widget-setting name='link-1'>https://vidcaptions.blogspot.com/p/caption-generator.html</b:widget-setting>
+                    <b:widget-setting name='text-2'>About</b:widget-setting>
+                    <b:widget-setting name='link-2'>https://vidcaptions.blogspot.com/#about</b:widget-setting>
+                </b:widget-settings>
+                <b:includable id='main'>
+                    <nav class='nav-menu' id='mobileNav'>
+                        <b:loop values='data:links' var='link'>
+                            <a expr:href='data:link.target'><data:link.name/></a>
+                        </b:loop>
+                    </nav>
+                </b:includable>
+            </b:widget>
+        </b:section>
+    </header>
+
+    <!-- Main Content Layout -->
+    <div class='page-wrapper'>
+        <main>
+            <!-- Show Homepage Hero Section -->
+            <b:if cond='data:view.isHomepage'>
+                <div class='hero-section'>
+                    <h1>Free AI Audio &amp; Video Caption Generator</h1>
+                    <p>Convert audio files and video content into accurate captions using OpenAI Whisper AI.</p>
+                    <a class='cta-button' href='/p/caption-generator.html'>🚀 Launch AI Caption Studio</a>
+                </div>
+
+                <div class='features-grid'>
+                    <div class='feature-card'>
+                        <h3>⚡ How to Use</h3>
+                        <p>Upload your audio/video file directly and click generate for instant subtitles.</p>
+                    </div>
+                    <div class='feature-card'>
+                        <h3>🌐 Supported Languages</h3>
+                        <p>Supports English, Urdu, Pashto, Hindi, Spanish, French, and many more.</p>
+                    </div>
+                </div>
+            </b:if>
+
+            <!-- Blog Posts Display -->
+            <b:section id='main-blog-posts' showaddelement='yes'>
+                <b:widget id='Blog1' locked='true' title='Blog Posts' type='Blog'>
+                    <b:includable id='main'>
+                        <div class='blog-posts-container'>
+                            <b:loop values='data:posts' var='post'>
+                                <article class='blog-post-card'>
+                                    <!-- Agar blog title HIDE karna ho to is h2/h3 ko comment out ya remove kar sakte hain -->
+                                    <b:if cond='data:post.title'>
+                                        <h2 class='post-title' style='font-size: 20px; margin-bottom: 10px;'>
+                                            <a expr:href='data:post.url' style='color: #2563eb; text-decoration: none;'><data:post.title/></a>
+                                        </h2>
+                                    </b:if>
+                                    <div class='post-body-snippet'>
+                                        <data:post.body/>
+                                    </div>
+                                </article>
+                            </b:loop>
+                        </div>
+                    </b:includable>
+                </b:widget>
+            </b:section>
+        </main>
+
+        <!-- Right Sidebar -->
+        <aside>
+            <b:section id='sidebar-section' showaddelement='yes'>
+                <b:widget id='Label1' locked='false' title='Categories' type='Label'/>
+                <b:widget id='HTML1' locked='false' title='Quick Info' type='HTML'>
+                    <b:widget-settings>
+                        <b:widget-setting name='content'>Processed securely via OpenAI Whisper cloud models.</b:widget-setting>
+                    </b:widget-settings>
+                    <b:includable id='main'>
+                        <div class='widget'>
+                            <h2>🚀 Fast &amp; Secure</h2>
+                            <p style='font-size: 13.5px; color: #475569;'><data:content/></p>
+                        </div>
+                    </b:includable>
+                </b:widget>
+            </b:section>
+        </aside>
     </div>
-    <div class="tip">
-      💡 <b>Pro tip:</b> For best results, use clear audio, and if the YouTube link cannot be downloaded, 
-                please upload the media file instead.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
-SUPPORTED_TYPES = ["mp3", "wav", "mp4", "m4a", "mpeg", "mpga", "webm", "ogg", "oga", "flac"]
-LANGUAGES = {
-    "English": "en",
-    "Urdu": "ur",
-    "Arabic": "ar",
-    "Hindi": "hi",
-    "Spanish": "es",
-    "French": "fr",
-    "German": "de",
-    "Chinese (Simplified)": "zh",
-    "Portuguese": "pt",
-    "Turkish": "tr",
-    "Italian": "it",
-    "Japanese": "ja",
-    "Korean": "ko",
-    "Russian": "ru",
-    "Bengali": "bn",
-    "Punjabi": "pa",
-    "Persian": "fa",
-    "Indonesian": "id",
-    "Dutch": "nl",
-    "Polish": "pl",
-    "Thai": "th",
-    "Vietnamese": "vi",
-    "Swahili": "sw",
-}
-LANG_CODE_TO_NAME = {v: k for k, v in LANGUAGES.items()}
+    <!-- Footer -->
+    <footer>
+        <p>&#169; 2026 VidCaptions Studio &#8226; Built with OpenAI Whisper &amp; Streamlit</p>
+    </footer>
 
-@st.cache_resource(show_spinner="Loading Whisper model (first run may take a little while)...")
-def load_whisper_model():
-    return whisper.load_model("base")
-
-def format_srt_time(seconds):
-    seconds = max(0.0, float(seconds))
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    whole_seconds = int(seconds % 60)
-    milliseconds = int(round((seconds - int(seconds)) * 1000))
-    if milliseconds >= 1000:
-        whole_seconds += 1
-        milliseconds = 0
-    if whole_seconds >= 60:
-        minutes += 1
-        whole_seconds = 0
-    if minutes >= 60:
-        hours += 1
-        minutes = 0
-    return f"{hours:02}:{minutes:02}:{whole_seconds:02},{milliseconds:03}"
-
-def format_readable_time(seconds):
-    total = max(0, int(seconds))
-    return f"{total // 60:02}:{total % 60:02}"
-
-def make_srt(segments):
-    blocks = []
-    for index, segment in enumerate(segments, start=1):
-        text = str(segment.get("text", "")).strip()
-        if not text:
-            continue
-        blocks.append(
-            f"{index}\n"
-            f"{format_srt_time(segment['start'])} --> {format_srt_time(segment['end'])}\n"
-            f"{text}"
-        )
-    return "\n\n".join(blocks) + ("\n" if blocks else "")
-
-def make_txt(segments):
-    lines = []
-    for segment in segments:
-        text = str(segment.get("text", "")).strip()
-        if text:
-            lines.append(f"[{format_readable_time(segment['start'])} - {format_readable_time(segment['end'])}] {text}")
-    return "\n".join(lines)
-
-def safe_language_code(name):
-    return LANGUAGES.get(name, "und")
-
-def get_openai_api_key():
-    try:
-        key = st.secrets.get("OPENAI_API_KEY", "")
-    except Exception:
-        key = ""
-    return key or os.getenv("OPENAI_API_KEY", "")
-
-def transcribe_media(media_path, source_language):
-    model = load_whisper_model()
-    kwargs = {"fp16": False, "verbose": False}
-    if source_language != "Auto Detect":
-        code = safe_language_code(source_language)
-        if code != "und":
-            kwargs["language"] = code
-    result = model.transcribe(media_path, **kwargs)
-    segments = []
-    for item in result.get("segments", []):
-        text = str(item.get("text", "")).strip()
-        if text:
-            segments.append({
-                "start": float(item.get("start", 0.0)),
-                "end": float(item.get("end", 0.0)),
-                "text": text,
-            })
-    detected_code = result.get("language", "und")
-    detected_name = LANG_CODE_TO_NAME.get(detected_code, detected_code.upper() if detected_code != "und" else "Unknown")
-    return segments, detected_code, detected_name
-
-def translate_segments(segments, target_language, api_key):
-    """Translate batches of segment text while preserving original segment timing."""
-    if not api_key:
-        raise ValueError(
-            "Translation API key is missing. Add OPENAI_API_KEY to Streamlit Cloud Secrets."
-        )
-    if not segments:
-        return []
-    client = OpenAI(api_key=api_key)
-    translated = []
-    batch_size = 35
-    for start_index in range(0, len(segments), batch_size):
-        batch = segments[start_index:start_index + batch_size]
-        numbered_text = "\n".join(
-            f"{i + 1}. {segment['text']}" for i, segment in enumerate(batch)
-        )
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"Translate each numbered subtitle segment into {target_language}. "
-                        "Return exactly the same number of numbered lines, in the same order. "
-                        "Keep each translation concise for subtitles. Do not merge, split, "
-                        "renumber, explain, or add lines. Preserve names and meaning. "
-                        "Output only numbered translations."
-                    ),
-                },
-                {"role": "user", "content": numbered_text},
-            ],
-        )
-        response_text = response.choices[0].message.content or ""
-        parsed = {}
-        for line in response_text.splitlines():
-            match = re.match(r"^\s*(\d+)[.)]\s*(.*?)\s*$", line)
-            if match:
-                parsed[int(match.group(1))] = match.group(2).strip()
-        if len(parsed) != len(batch) or any(i not in parsed for i in range(1, len(batch) + 1)):
-            raise ValueError(
-                "Translation response could not be aligned safely with subtitle segments. "
-                "Please try again."
-            )
-        for i, segment in enumerate(batch, start=1):
-            translated.append({
-                "start": segment["start"],
-                "end": segment["end"],
-                "text": parsed[i],
-            })
-    return translated
-
-def download_youtube_audio(url, destination):
-    output_template = str(Path(destination) / "youtube_audio.%(ext)s")
-    options = {
-        "format": "bestaudio/best",
-        "outtmpl": output_template,
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-        "retries": 2,
-        "socket_timeout": 20,
-    }
-    with yt_dlp.YoutubeDL(options) as downloader:
-        info = downloader.extract_info(url, download=True)
-        path = downloader.prepare_filename(info)
-    if not os.path.exists(path):
-        candidates = list(Path(destination).glob("youtube_audio.*"))
-        if not candidates:
-            raise FileNotFoundError("Downloaded audio file was not found.")
-        path = str(candidates[0])
-    return path
-
-def display_results(segments, label, filename_prefix):
-    if not segments:
-        st.warning("No speech segments were found.")
-        return
-    st.subheader(label)
-    st.text_area(
-        f"{label} preview",
-        make_txt(segments),
-        height=240,
-        key=f"preview_{filename_prefix}",
-    )
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            "⬇️ Download SRT",
-            data=make_srt(segments).encode("utf-8"),
-            file_name=f"{filename_prefix}.srt",
-            mime="application/x-subrip",
-            key=f"srt_{filename_prefix}",
-        )
-    with col2:
-        st.download_button(
-            "⬇️ Download TXT",
-            data=make_txt(segments).encode("utf-8"),
-            file_name=f"{filename_prefix}.txt",
-            mime="text/plain; charset=utf-8",
-            key=f"txt_{filename_prefix}",
-        )
-
-if "original_segments" not in st.session_state:
-    st.session_state.original_segments = None
-if "translated_segments" not in st.session_state:
-    st.session_state.translated_segments = None
-if "detected_language_name" not in st.session_state:
-    st.session_state.detected_language_name = None
-if "detected_language_code" not in st.session_state:
-    st.session_state.detected_language_code = None
-if "translation_target" not in st.session_state:
-    st.session_state.translation_target = None
-
-upload_tab, youtube_tab = st.tabs(["📁 Method 1: Upload File", "🔗 Method 2: YouTube Link"])
-
-with upload_tab:
-    uploaded_file = st.file_uploader(
-        "Upload an audio or video file",
-        type=SUPPORTED_TYPES,
-        help="Supported formats include MP3, WAV, MP4, M4A, WEBM, OGG, and FLAC.",
-    )
-    source_language = st.selectbox(
-        "Spoken language",
-        ["Auto Detect"] + list(LANGUAGES.keys()),
-        index=0,
-        help="Choose Auto Detect to let Whisper identify the spoken language.",
-        key="upload_source_language",
-    )
-    if st.button("🚀 Generate Captions Now", type="primary", use_container_width=True, key="upload_transcribe"):
-        if not uploaded_file:
-            st.warning("Please upload an audio or video file first.")
-        else:
-            st.session_state.original_segments = None
-            st.session_state.translated_segments = None
-            with tempfile.TemporaryDirectory(prefix="caption_upload_") as work_dir:
-                suffix = Path(uploaded_file.name).suffix or ".media"
-                media_path = str(Path(work_dir) / f"uploaded_media{suffix}")
-                with open(media_path, "wb") as file_handle:
-                    file_handle.write(uploaded_file.getbuffer())
-                try:
-                    with st.spinner("Transcribing audio with Whisper..."):
-                        segments, lang_code, lang_name = transcribe_media(media_path, source_language)
-                    st.session_state.original_segments = segments
-                    st.session_state.detected_language_code = lang_code
-                    st.session_state.detected_language_name = lang_name
-                    st.success(f"Transcription complete. Detected language: {lang_name}")
-                except Exception as exc:
-                    st.error(f"Transcription failed: {exc}")
-
-with youtube_tab:
-    st.info("If YouTube downloading returns HTTP 403, upload the media file using the first tab.")
-    youtube_url = st.text_input("YouTube video URL", placeholder="https://www.youtube.com/watch?v=...")
-    yt_source_language = st.selectbox(
-        "Spoken language",
-        ["Auto Detect"] + list(LANGUAGES.keys()),
-        index=0,
-        key="youtube_source_language",
-    )
-    if st.button("🚀 Generate Captions Now", type="primary", use_container_width=True, key="youtube_transcribe"):
-        if not youtube_url.strip():
-            st.warning("Please enter a YouTube URL.")
-        elif not re.match(r"^https?://(www\.)?(youtube\.com|youtu\.be)/", youtube_url.strip(), re.I):
-            st.warning("Please enter a valid YouTube or youtu.be URL.")
-        else:
-            st.session_state.original_segments = None
-            st.session_state.translated_segments = None
-            with tempfile.TemporaryDirectory(prefix="caption_youtube_") as work_dir:
-                try:
-                    with st.spinner("Attempting to download audio from YouTube..."):
-                        media_path = download_youtube_audio(youtube_url.strip(), work_dir)
-                    with st.spinner("Transcribing audio with Whisper..."):
-                        segments, lang_code, lang_name = transcribe_media(media_path, yt_source_language)
-                    st.session_state.original_segments = segments
-                    st.session_state.detected_language_code = lang_code
-                    st.session_state.detected_language_name = lang_name
-                    st.success(f"Transcription complete. Detected language: {lang_name}")
-                except Exception as exc:
-                    message = str(exc)
-                    if "403" in message or "Forbidden" in message:
-                        st.error(
-                            "YouTube refused the media request (HTTP 403). This may be a hosting "
-                            "or YouTube request restriction; it is not necessarily a problem with "
-                            "your video. Please upload the media file using the first tab."
-                        )
-                    else:
-                        st.error(f"YouTube processing failed: {message}")
-
-if st.session_state.original_segments is not None:
-    st.divider()
-    detected_name = st.session_state.detected_language_name or "Unknown"
-    st.caption(f"Detected source language: **{detected_name}**")
-    display_results(
-        st.session_state.original_segments,
-        f"Original Captions ({detected_name})",
-        f"captions_original_{st.session_state.detected_language_code or 'und'}",
-    )
-
-    st.divider()
-    st.subheader("🌐 Translate Captions")
-    st.write("Keep the original captions, or translate them into another language.")
-    target_options = list(LANGUAGES.keys())
-    default_target_index = target_options.index("English") if "English" in target_options else 0
-    target_language = st.selectbox(
-        "Translate into",
-        target_options,
-        index=default_target_index,
-        key="target_language",
-    )
-    if st.button("🌍 Translate Captions", type="primary", use_container_width=True):
-        if target_language == detected_name:
-            st.info("The selected target language matches the detected language. Choose another language if you need a translation.")
-        else:
-            api_key = get_openai_api_key()
-            try:
-                with st.spinner(f"Translating captions into {target_language}..."):
-                    result = translate_segments(st.session_state.original_segments, target_language, api_key)
-                st.session_state.translated_segments = result
-                st.session_state.translation_target = target_language
-                st.success(f"Translation complete: {target_language}")
-            except Exception as exc:
-                st.error(f"Translation failed: {exc}")
-
-    if st.session_state.translated_segments is not None:
-        target = st.session_state.translation_target or target_language
-        target_code = safe_language_code(target)
-        display_results(
-            st.session_state.translated_segments,
-            f"Translated Captions ({target})",
-            f"captions_{target_code}",
-        )
-st.markdown(
-    "<p style='text-align:center;color:#7b8494;font-size:.85rem;margin-top:28px;'>"
-    "    </p>",
-    unsafe_allow_html=True,
-)
-
+    <!-- JavaScript for Mobile 3-Line Menu Toggle -->
+    <script type='text/javascript'>
+        function toggleMobileMenu() {
+            var nav = document.getElementById('mobileNav');
+            if (nav) {
+                nav.classList.toggle('active');
+            }
+        }
+    </script>
+</body>
+</html>
