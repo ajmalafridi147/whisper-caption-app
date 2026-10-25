@@ -15,13 +15,25 @@ st.set_page_config(
     layout="centered",
 )
 
-# Preserve the original compact, centered design.
+# Clean CSS with Centered Tabs and Responsive Design
 st.markdown(
     """
     <style>
     #MainMenu, footer, header {visibility: hidden;}
     [data-testid="stStatusWidget"] {visibility: hidden;}
     .block-container {max-width: 850px; padding-top: 1.5rem; padding-bottom: 2rem;}
+    
+    /* Center align tabs */
+    div[data-testid="stTabs"] {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    div[data-testid="stTabs"] [data-baseweb="tab-list"] {
+        justify-content: center;
+        display: flex;
+    }
+
     .hero {
         background: linear-gradient(120deg, #6548d7 0%, #3277e8 100%);
         color: white; padding: 25px 22px; border-radius: 16px;
@@ -37,7 +49,6 @@ st.markdown(
     div.stButton > button, div.stDownloadButton > button {
         border-radius: 9px; font-weight: 600; width: 100%;
     }
-    div[data-testid="stTabs"] button {justify-content: center;}
     .small-note {font-size: .88rem; color: #687386;}
     </style>
     """,
