@@ -580,6 +580,6 @@ with youtube_tab:
 
 st.divider()
 st.caption(
-    "Transcription powered by OpenAI Whisper. "
-    "Translation powered by a LibreTranslate-compatible service."
+    "   "
+    "   "
 )
