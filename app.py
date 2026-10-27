@@ -101,7 +101,7 @@ LIBRETRANSLATE_URL = os.getenv(
     "https://libretranslate.com"
 ).rstrip("/")
 
-LIBRETRANSLATE_API_KEY = os.getenv("LIBRETRANSLATE_API_KEY", "")
+LIBRETRANSLATE_API_KEY = os.getenv("LIBRETRANSLATE_API_KEY", "S5eLorXfuLQ2TucA9kqsSSdGjr0-ckEE1QEXIiDpHUI")
 
 
 # -------------------- WHISPER MODEL --------------------
